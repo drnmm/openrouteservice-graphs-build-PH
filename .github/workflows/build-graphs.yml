@@ -1,0 +1,51 @@
+name: Build Openrouteservice graphs for Philippines
+
+on:
+  push:
+    branches:
+      - main
+
+
+jobs:
+  build:
+    name: "Build Graphs"
+    runs-on: ubuntu-latest
+    env:
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      ACCESS_KEY: ${{ secrets.ACCESS_KEY }}
+      ACCESS_ID: ${{ secrets.ACCESS_ID }}
+    steps:
+      - name: Checkout Source Repo
+        uses: actions/checkout@v2
+
+      - name: Get Philippines PBF file
+        working-directory: ./docker/
+        run: wget https://download.geofabrik.de/asia/philippines-latest.osm.pbf
+
+      - name: Build graphs
+        working-directory: ./docker/
+        run: |
+          mkdir -p conf elevation_cache graphs logs/ors logs/tomcat
+          ORS_UID=${UID} ORS_GID=${GID} docker-compose up -d
+
+      - name: Install dependencies
+        working-directory: ./
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install -r requirements.txt
+
+      - name: Run build verifier
+        working-directory: ./
+        run: python3 test-build.py
+
+      - name: Build Cleanup
+        working-directory: ./docker/
+        run: docker-compose down
+
+      - name: Zip Folder
+        working-directory: ./docker/
+        run: zip -r philippines-latest.zip *
+        
+      - name: Upload to S3
+        working-directory: ./
+        run: python3 upload-s3.py
